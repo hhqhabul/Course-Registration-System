@@ -1,3 +1,7 @@
 package com.acme.regsys.dto;
 
-public record EnrollRequest(String studentId, String courseId) {}
+import jakarta.validation.constraints.*;
+
+public record EnrollRequest(
+  @NotBlank(message = "courseId is required") String courseId
+) {}

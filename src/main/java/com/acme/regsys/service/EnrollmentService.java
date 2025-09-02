@@ -10,57 +10,42 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-
 @Service
 @RequiredArgsConstructor
 public class EnrollmentService {
+  private final EnrollmentRepo enrollmentRepo;
+  private final StudentRepo studentRepo;
+  private final CourseRepo courseRepo;
 
-    private final EnrollmentRepo enrollmentRepo;
-    private final StudentRepo studentRepo;
-    private final CourseRepo courseRepo;
+  @Transactional
+  public Enrollment enroll(String studentId, String courseId) {
+    Student s = studentRepo.findById(studentId)
+      .orElseThrow(() -> new IllegalArgumentException("Student not found"));
+    Course c = courseRepo.findById(courseId)
+      .orElseThrow(() -> new IllegalArgumentException("Course not found"));
 
-    @Transactional
-    public Enrollment enroll(String studentId, String courseId) {
-        Student student = studentRepo.findById(studentId)
-                .orElseThrow(() -> new IllegalArgumentException("Student not found"));
-        Course course = courseRepo.findById(courseId)
-                .orElseThrow(() -> new IllegalArgumentException("Course not found"));
+    // duplicate check
+    if (enrollmentRepo.existsByStudentIdAndCourseId(studentId, courseId))
+      throw new IllegalStateException("Already enrolled");
 
-        // 1. Check duplicate
-        if (enrollmentRepo.existsByStudentIdAndCourseId(studentId, courseId)) {
-            throw new IllegalStateException("Already enrolled in this course");
-        }
+    // capacity check
+    int current = enrollmentRepo.countByCourseId(courseId);
+    if (current >= c.getCapacity())
+      throw new IllegalStateException("Course is full");
 
-        // 2. Check capacity
-        int current = enrollmentRepo.countByCourseId(courseId);
-        if (current >= course.getCapacity()) {
-            throw new IllegalStateException("Course is full");
-        }
+    // time conflict check (same day & overlapping time)
+    boolean conflict = s.getEnrollments().stream()
+      .map(Enrollment::getCourse)
+      .filter(ec -> ec.getDayOfWeek() == c.getDayOfWeek())
+      .anyMatch(ec -> c.getStartTime().isBefore(ec.getEndTime())
+                   && ec.getStartTime().isBefore(c.getEndTime()));
+    if (conflict) throw new IllegalStateException("Time conflict with another course");
 
-        // time conflict check
-        var sameDayEnrollments = student.getEnrollments().stream()
-            .filter(e -> e.getCourse().getDayOfWeek() == course.getDayOfWeek())
-            .map(Enrollment::getCourse)
-            .toList();
+    return enrollmentRepo.save(Enrollment.builder().student(s).course(c).build());
+  }
 
-        boolean overlaps = sameDayEnrollments.stream().anyMatch(c ->
-            course.getStartTime().isBefore(c.getEndTime()) &&
-            c.getStartTime().isBefore(course.getEndTime())
-        );
-
-        if (overlaps) {
-            throw new IllegalStateException("Time conflict with another course.");
-        }
-
-        // 3. (Later) Add time conflict check
-
-        Enrollment enrollment = Enrollment.builder()
-                .student(student)
-                .course(course)
-                .build();
-
-        return enrollmentRepo.save(enrollment);
-    }
+  @Transactional
+  public void drop(String enrollmentId) {
+    enrollmentRepo.deleteById(enrollmentId);
+  }
 }
-

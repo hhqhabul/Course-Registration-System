@@ -7,6 +7,6 @@ public record CourseDto(
     int capacity,
     int credits,
     int dayOfWeek,
-    String startTime,
-    String endTime
+    String startTime,  
+    String endTime    
 ) {}
